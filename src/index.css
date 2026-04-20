@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -8,8 +10,16 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 0 0% 4%;
+    --foreground: 150 20% 96%;
+    --watermark: 145 30% 38%;
+    --terminal: 145 90% 55%;
+    --terminal-glow: 145 100% 65%;
+    --accent-cyan: 180 90% 55%;
+    --danger: 0 85% 62%;
+    --warning: 38 95% 60%;
+    --surface: 0 0% 7%;
+    --surface-elevated: 0 0% 10%;
 
     --card: 0 0% 100%;
     --card-foreground: 222.2 84% 4.9%;
@@ -101,5 +111,57 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+  }
+
+  .font-mono {
+    font-family: 'JetBrains Mono', monospace;
   }
 }
+
+@layer utilities {
+  .text-terminal {
+    color: hsl(var(--terminal));
+    text-shadow: 0 0 12px hsl(var(--terminal-glow) / 0.5);
+  }
+
+  .glow-border {
+    box-shadow: 0 0 0 1px hsl(var(--terminal) / 0.25), 0 0 30px hsl(var(--terminal) / 0.1);
+  }
+}
+
+/* Diagonal scrolling code watermark */
+.code-watermark {
+  position: fixed;
+  inset: -50%;
+  pointer-events: none;
+  z-index: 0;
+  transform: rotate(-20deg);
+  opacity: 0.18;
+  overflow: hidden;
+}
+
+.code-watermark-track {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  line-height: 1.9;
+  color: hsl(0 0% 45%);
+  white-space: pre;
+  animation: watermark-scroll 60s linear infinite;
+}
+
+@keyframes watermark-scroll {
+  from { transform: translateY(0); }
+  to { transform: translateY(-50%); }
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+.cursor::after {
+  content: '▋';
+  margin-left: 2px;
+  color: hsl(var(--terminal));
+  animation: blink 1s steps(1) infinite;
+}
+
