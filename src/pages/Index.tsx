@@ -90,6 +90,9 @@ const Index = () => {
   const analyzeImage = async (dataUrl: string) => {
     setLoading(true);
     setAnalysis(null);
+    // Jump to workbench so user sees progress + results immediately
+    document.getElementById("analyze")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const t = toast.loading("Reading image & compiling…");
     try {
       const { data, error } = await supabase.functions.invoke("analyze-code", {
         body: { imageBase64: dataUrl },
@@ -98,9 +101,9 @@ const Index = () => {
       if (data?.error) throw new Error(data.error);
       setAnalysis(data);
       setCode(data.extractedCode || "");
-      toast.success("Code analyzed");
+      toast.success("Code extracted & compiled", { id: t });
     } catch (e: any) {
-      toast.error(e.message || "Analysis failed");
+      toast.error(e.message || "Analysis failed", { id: t });
     } finally {
       setLoading(false);
     }
