@@ -4,19 +4,59 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const MAX_BODY_BYTES = 12 * 1024 * 1024; // 12 MB
+const MAX_IMAGE_B64_LEN = 14 * 1024 * 1024; // ~10 MB binary
+const MAX_CODE_LEN = 200_000; // ~200 KB of source
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
-    const { imageBase64, code, language } = await req.json();
+    // Reject oversized payloads before reading the body
+    const contentLength = Number(req.headers.get("content-length") ?? "0");
+    if (contentLength && contentLength > MAX_BODY_BYTES) {
+      return jsonResponse({ error: "Request payload too large." }, 413);
+    }
+
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY missing");
+    if (!LOVABLE_API_KEY) {
+      console.error("LOVABLE_API_KEY missing");
+      return jsonResponse({ error: "Service is temporarily unavailable." }, 500);
+    }
+
+    let payload: { imageBase64?: unknown; code?: unknown; language?: unknown };
+    try {
+      payload = await req.json();
+    } catch {
+      return jsonResponse({ error: "Invalid JSON body." }, 400);
+    }
+
+    const imageBase64 = typeof payload.imageBase64 === "string" ? payload.imageBase64 : undefined;
+    const code = typeof payload.code === "string" ? payload.code : undefined;
+    const language = typeof payload.language === "string" ? payload.language.slice(0, 50) : undefined;
 
     if (!imageBase64 && !code) {
-      return new Response(JSON.stringify({ error: "Provide imageBase64 or code" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "Provide imageBase64 or code" }, 400);
+    }
+
+    if (imageBase64) {
+      if (imageBase64.length > MAX_IMAGE_B64_LEN) {
+        return jsonResponse({ error: "Image is too large. Please use a smaller file." }, 413);
+      }
+      if (!/^data:image\/(png|jpe?g|webp|gif|bmp);base64,/i.test(imageBase64)) {
+        return jsonResponse({ error: "Invalid image format. Provide a base64 data URL." }, 400);
+      }
+    }
+
+    if (code && code.length > MAX_CODE_LEN) {
+      return jsonResponse({ error: "Code is too long. Please shorten the input." }, 413);
     }
 
     const systemPrompt = `You are an expert code analyzer and compiler simulator. You will:
@@ -91,42 +131,28 @@ Respond ONLY by calling the provided "analysis_result" tool.`;
 
     if (!resp.ok) {
       if (resp.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limit hit. Try again shortly." }), {
-          status: 429,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return jsonResponse({ error: "Rate limit hit. Try again shortly." }, 429);
       }
       if (resp.status === 402) {
-        return new Response(
-          JSON.stringify({ error: "AI credits exhausted. Add funds in Settings → Workspace → Usage." }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        return jsonResponse(
+          { error: "AI credits exhausted. Add funds in Settings → Workspace → Usage." },
+          402,
         );
       }
       const t = await resp.text();
       console.error("Gateway error:", resp.status, t);
-      return new Response(JSON.stringify({ error: "AI gateway error" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "AI gateway error" }, 500);
     }
 
     const data = await resp.json();
     const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
     if (!toolCall) {
-      return new Response(JSON.stringify({ error: "No analysis returned" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "No analysis returned" }, 500);
     }
     const result = JSON.parse(toolCall.function.arguments);
-    return new Response(JSON.stringify(result), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return jsonResponse(result);
   } catch (e) {
     console.error("analyze-code error:", e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return jsonResponse({ error: "Internal server error. Please try again." }, 500);
   }
 });
